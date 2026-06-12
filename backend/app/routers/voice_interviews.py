@@ -13,6 +13,8 @@ from ..models import (
     VoiceInterviewSession,
     VoiceInterviewTurn,
 )
+from ..services.interview_ai_service import InterviewAIProviderError, evaluate_interview_with_openai
+from ..services.provider_config import get_provider_config
 
 router = APIRouter(prefix="/voice-interviews", tags=["voice-interviews"])
 
@@ -27,31 +29,6 @@ class SubmitVoiceInterviewRequest(BaseModel):
     answer_chunks: Optional[List[str]] = None
 
 
-CONTENT_SIGNALS = {
-    "ownership": ["own", "responsibility", "accountable", "closure", "follow up", "follow-up"],
-    "execution": ["plan", "tracker", "review", "priority", "timeline", "daily", "rhythm"],
-    "problem_solving": ["root cause", "data", "analysis", "why", "pattern", "prevent"],
-    "client_maturity": ["client", "transparent", "communicate", "escalation", "commitment"],
-    "people_leadership": ["coach", "team", "leader", "agent", "feedback", "performance"],
-    "integrity": ["honest", "correct", "accurate", "compliance", "policy", "truth"],
-}
-
-RISK_SIGNALS = ["hide", "fake", "manipulate", "adjust data", "blame", "ignore", "not my responsibility"]
-
-PROTECTED_ATTRIBUTE_TERMS = [
-    "age",
-    "gender",
-    "religion",
-    "caste",
-    "race",
-    "disability",
-    "marital",
-    "pregnancy",
-    "appearance",
-    "accent",
-]
-
-
 def build_voice_questions(job: JobRequisition, traits: List[RoleTraitBlueprint]) -> List[str]:
     ranked = sorted(traits, key=lambda item: item.weight, reverse=True)[:5]
     questions = [
@@ -64,58 +41,6 @@ def build_voice_questions(job: JobRequisition, traits: List[RoleTraitBlueprint])
         )
     questions.append("Share one work situation where you failed or missed an outcome. What did you learn and what control did you create after that?")
     return questions
-
-
-def evaluate_voice_transcript(transcript: str) -> dict:
-    text = transcript.lower()
-    matched = {}
-    for category, signals in CONTENT_SIGNALS.items():
-        matched[category] = [signal for signal in signals if signal in text]
-
-    total_signal_count = sum(len(set(values)) for values in matched.values())
-    risk_hits = [signal for signal in RISK_SIGNALS if signal in text]
-    protected_hits = [term for term in PROTECTED_ATTRIBUTE_TERMS if term in text]
-
-    word_count = len(transcript.split())
-    base_score = 45
-    signal_score = min(total_signal_count * 4, 38)
-    depth_bonus = 10 if word_count >= 180 else 5 if word_count >= 90 else 0
-    risk_penalty = min(len(risk_hits) * 8, 24)
-
-    final_score = max(0, min(round(base_score + signal_score + depth_bonus - risk_penalty, 2), 100))
-    trait_signal_score = max(0, min(round(35 + signal_score - risk_penalty, 2), 100))
-    role_alignment_score = max(0, min(round(40 + (10 if "first 90" in text or "90 days" in text else 0) + depth_bonus + min(total_signal_count * 2, 28), 2), 100))
-
-    evidence = []
-    for category, signals in matched.items():
-        if signals:
-            evidence.append(f"{category.replace('_', ' ').title()}: " + ", ".join(sorted(set(signals))))
-    if not evidence:
-        evidence.append("Limited job-relevant evidence found in transcript content.")
-
-    risks = [f"Potential risk signal: {risk}" for risk in risk_hits]
-    if protected_hits:
-        risks.append("Protected-attribute terms were mentioned and intentionally ignored for scoring.")
-    if word_count < 80:
-        risks.append("Transcript is short; confidence is reduced due to limited evidence depth.")
-
-    if final_score >= 82:
-        recommendation = "STRONG_VOICE_SIGNAL_REVIEW_RECOMMENDED"
-    elif final_score >= 68:
-        recommendation = "GOOD_VOICE_SIGNAL_REVIEW_RECOMMENDED"
-    elif final_score >= 52:
-        recommendation = "MIXED_SIGNAL_MANUAL_REVIEW_REQUIRED"
-    else:
-        recommendation = "LOW_SIGNAL_MANUAL_REVIEW_REQUIRED"
-
-    return {
-        "content_score": final_score,
-        "trait_signal_score": trait_signal_score,
-        "role_alignment_score": role_alignment_score,
-        "evidence_summary": " | ".join(evidence),
-        "risk_flags": " | ".join(risks) if risks else "No major content risk flags found.",
-        "recommendation": recommendation,
-    }
 
 
 @router.post("/sessions")
@@ -155,20 +80,49 @@ def create_session(payload: CreateVoiceInterviewRequest, session: Session = Depe
 
 
 @router.post("/{session_id}/submit")
-def submit_voice_interview(session_id: int, payload: SubmitVoiceInterviewRequest, session: Session = Depends(get_session)):
+async def submit_voice_interview(session_id: int, payload: SubmitVoiceInterviewRequest, session: Session = Depends(get_session)):
     voice_session = session.get(VoiceInterviewSession, session_id)
     if not voice_session:
         raise HTTPException(status_code=404, detail="Voice interview session not found")
 
-    result = evaluate_voice_transcript(payload.transcript)
+    application = session.get(Application, voice_session.application_id)
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+    job = session.get(JobRequisition, application.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    traits = session.exec(select(RoleTraitBlueprint).where(RoleTraitBlueprint.job_id == job.id)).all()
+    trait_blueprint = [
+        {"trait": trait.trait, "weight": trait.weight, "evidence_required": trait.evidence_required}
+        for trait in traits
+    ]
+
+    config = get_provider_config()
+    if config.ai_provider != "openai":
+        raise HTTPException(status_code=400, detail="Only OpenAI interview evaluation is implemented in this build. Set AI_PROVIDER=openai.")
+
+    try:
+        result = await evaluate_interview_with_openai(
+            transcript=payload.transcript,
+            job_title=job.title,
+            role_expectations=job.role_expectations,
+            trait_blueprint=trait_blueprint,
+            api_key=config.openai_api_key,
+            model=config.ai_model,
+        )
+    except InterviewAIProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     voice_session.status = "COMPLETED_PENDING_REVIEW"
     voice_session.transcript = payload.transcript
-    voice_session.content_score = result["content_score"]
-    voice_session.trait_signal_score = result["trait_signal_score"]
-    voice_session.role_alignment_score = result["role_alignment_score"]
-    voice_session.evidence_summary = result["evidence_summary"]
-    voice_session.risk_flags = result["risk_flags"]
-    voice_session.recommendation = result["recommendation"]
+    voice_session.content_score = result.content_score
+    voice_session.trait_signal_score = result.trait_signal_score
+    voice_session.role_alignment_score = result.role_alignment_score
+    voice_session.evidence_summary = result.evidence_summary
+    voice_session.risk_flags = result.risk_flags
+    voice_session.recommendation = result.recommendation
+    voice_session.model_version = result.model
     voice_session.completed_at = datetime.utcnow()
 
     session.add(VoiceInterviewTurn(session_id=voice_session.id, speaker="CANDIDATE", message=payload.transcript))
