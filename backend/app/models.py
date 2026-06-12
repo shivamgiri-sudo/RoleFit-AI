@@ -7,6 +7,8 @@ class Organization(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     domain: Optional[str] = None
+    plan_name: str = "STARTER"
+    billing_model: str = "PER_USER"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -15,6 +17,18 @@ class Branch(SQLModel, table=True):
     organization_id: int = Field(foreign_key="organization.id", index=True)
     name: str
     city: Optional[str] = None
+
+
+class UserAccount(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    organization_id: Optional[int] = Field(default=None, foreign_key="organization.id", index=True)
+    branch_id: Optional[int] = Field(default=None, foreign_key="branch.id", index=True)
+    full_name: str
+    email: str = Field(index=True, unique=True)
+    password_hash: str
+    role: str = Field(default="COMPANY_ADMIN", index=True)
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class JobRequisition(SQLModel, table=True):
