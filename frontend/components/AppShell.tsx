@@ -3,10 +3,12 @@ import Link from 'next/link';
 const navItems = [
   ['Dashboard', '/dashboard'],
   ['Jobs', '/jobs'],
+  ['Career Page', '/career'],
   ['Candidates', '/candidates'],
   ['Applications', '/applications'],
   ['Assessment', '/assessment'],
   ['Interview Studio', '/voice-interview'],
+  ['Fit Report', '/fit-report'],
   ['Approvals', '/approvals'],
   ['Talent Pool', '/talent-pool'],
   ['Analytics', '/analytics'],
