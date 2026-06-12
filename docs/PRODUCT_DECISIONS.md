@@ -9,6 +9,37 @@
 | First use case | Operations Manager |
 | Hiring flow | AI recommendation + human approval |
 | Pricing model | Per user |
+| Database | MySQL |
+| Hosting/domain | Own domain |
+| Candidate assessment design | All assessment types required |
+| Communication channels | Email, SMS, WhatsApp, calendar, candidate portal updates |
+| Branding | Each company/tenant can upload and use its own company logo |
+
+## Required role library
+
+The initial role library must include all roles previously identified:
+
+1. Operations Manager
+2. Team Leader
+3. Quality Manager
+4. Quality Analyst
+5. Recruiter
+6. HR Telecaller
+7. Sales Executive
+8. Customer Support Executive
+9. Backend Verification Analyst
+10. Trainer
+
+Each role must have:
+
+- Role trait blueprint
+- Eligibility rules
+- Skill assessment
+- Scenario assessment
+- Voice interview question set
+- Role alignment question
+- Scoring rubric
+- Fit report template
 
 ## Product positioning
 
@@ -22,17 +53,19 @@ AI can automate workflow, generate evidence, recommend next steps, and prioritiz
 
 ## Pricing direction
 
-Per-user pricing will be the primary SaaS model. Candidate assessment volume, AI interview minutes, and advanced analytics can become add-ons later.
+Per-user pricing will be the primary SaaS model. Candidate assessment volume, AI interview minutes, communication usage, and advanced analytics can become add-ons later.
 
 ## First production scope
 
 1. Operations Manager role blueprint
-2. Company onboarding
+2. Company onboarding with logo/branding
 3. User login and access control
-4. Candidate application
-5. Trait assessment
-6. Deepgram transcript flow
-7. OpenAI evaluation flow
-8. Role fit report
-9. Human approval gate
-10. Analytics dashboard
+4. MySQL production database setup
+5. Candidate application
+6. All assessment types
+7. Deepgram transcript flow
+8. OpenAI evaluation flow
+9. Role fit report
+10. Human approval gate
+11. Email, SMS, WhatsApp, calendar, and portal notifications
+12. Analytics dashboard
