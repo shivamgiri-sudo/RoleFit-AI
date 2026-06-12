@@ -118,3 +118,32 @@ class TalentPoolRecord(SQLModel, table=True):
     tags: str
     notes: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class VoiceInterviewSession(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    application_id: int = Field(foreign_key="application.id", index=True)
+    status: str = "READY"
+    interview_mode: str = "VOICE_TRANSCRIPT"
+    consent_captured: bool = False
+    consent_statement: str = "Candidate consented to a voice interview. Scoring is based only on transcript content, not accent, emotion, tone, face, age, gender, caste, religion, or any protected attribute."
+    conversation_plan: str
+    transcript: Optional[str] = None
+    content_score: float = 0
+    role_alignment_score: float = 0
+    trait_signal_score: float = 0
+    evidence_summary: Optional[str] = None
+    risk_flags: Optional[str] = None
+    recommendation: Optional[str] = None
+    model_version: str = "mock-voice-interview-v1"
+    prompt_version: str = "voice-content-eval-v1"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+
+
+class VoiceInterviewTurn(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: int = Field(foreign_key="voiceinterviewsession.id", index=True)
+    speaker: str
+    message: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
