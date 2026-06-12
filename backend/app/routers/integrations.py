@@ -1,8 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from ..services.provider_config import get_provider_config
-from ..services.speech_service import provider_connection_hint, transcribe_text_input
+from ..services.speech_service import (
+    SpeechProviderError,
+    normalize_text_transcript,
+    provider_connection_hint,
+    transcribe_deepgram_audio,
+)
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -39,13 +44,30 @@ def integration_status():
 
 @router.post("/transcript")
 def transcript_from_text(payload: TranscriptRequest):
-    config = get_provider_config()
     if not payload.text.strip():
         raise HTTPException(status_code=400, detail="Transcript text cannot be empty")
-    result = transcribe_text_input(
-        text=payload.text,
-        provider=config.speech_provider,
-        model=config.speech_model,
-        language=payload.language,
-    )
+    return normalize_text_transcript(text=payload.text, language=payload.language)
+
+
+@router.post("/transcribe-audio")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    language: str = Form("en-IN"),
+):
+    config = get_provider_config()
+    if config.speech_provider != "deepgram":
+        raise HTTPException(status_code=400, detail="Only Deepgram audio transcription is implemented in this build. Set SPEECH_PROVIDER=deepgram.")
+
+    audio_bytes = await file.read()
+    try:
+        result = await transcribe_deepgram_audio(
+            audio_bytes=audio_bytes,
+            content_type=file.content_type or "application/octet-stream",
+            api_key=config.deepgram_api_key,
+            model=config.speech_model,
+            language=language,
+        )
+    except SpeechProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     return result
